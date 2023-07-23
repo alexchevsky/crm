@@ -1,0 +1,145 @@
+---
+- name: Deploy Django Application
+  hosts: prod
+  remote_user: ubuntu  # Replace with your remote user
+  become: true
+
+  vars:
+      host: "{{ inventory_hostname }}"
+      ansible_user: "ubuntu"
+
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+      become: true
+
+    - name: Upgrade packages
+      apt:
+        upgrade: dist
+        autoremove: yes
+      become: true
+
+    - name: Deadsnakes PPA to get Python 3.9
+      become: yes
+      apt_repository:
+        repo='ppa:deadsnakes/ppa'
+
+    - name: Make sure required packages are installed
+      apt: 
+        pkg=nginx,git,python3.9,python3.9-venv,gettext
+        state=present
+
+    - name: Set up git configurations
+      ini_file:
+        path: /home/ubuntu/.gitconfig
+        section: user
+        option: name
+        value: "Your Name"
+      become_user: ubuntu
+
+    - name: Set up git email
+      ini_file:
+        path: /home/ubuntu/.gitconfig
+        section: user
+        option: email
+        value: "your.email@example.com"
+      become_user: ubuntu
+
+    - name: Download code from Github
+      ansible.builtin.git:
+        repo: https://github.com/alexchevsky/crm.git
+        dest: /home/ubuntu/crm
+        force: true
+    
+    - name: Create virtual environment
+      command: python3.9 -m venv /home/ubuntu/crm/venv
+      become: true
+
+    - name: Install Python dependencies
+      pip:
+        requirements: /home/ubuntu/crm/requirements.txt
+        virtualenv: /home/ubuntu/crm/venv
+      become: true
+
+    - name: Collect Static Files
+      community.general.django_manage:
+        command: collectstatic --noinput
+        project_path: "/home/{{ ansible_user }}/crm"
+        virtualenv: "/home/{{ ansible_user }}/crm/venv"
+      tags:
+        - static
+
+    - name: Run migrations
+      community.general.django_manage:
+        command: migrate
+        project_path: "/home/ubuntu/crm/"
+        virtualenv: "/home/ubuntu/crm/venv"
+
+    - name: Install Gunicorn
+      pip:
+        name: gunicorn
+        virtualenv: /home/ubuntu/crm/venv
+      become: true
+
+    - name: Create Nginx config file
+      template:
+        src: nginx.conf.j2
+        dest: /etc/nginx/sites-available/crm
+      become: true
+
+    - name: Remove default Nginx config
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      become: true
+
+    - name: Enable Nginx config
+      file:
+        src: /etc/nginx/sites-available/crm
+        dest: /etc/nginx/sites-enabled/crm
+        state: link
+      become: true
+
+    - name: Restart Nginx
+      service:
+        name: nginx
+        state: restarted
+      become: true
+
+    - name: Create Supervisor config file
+      template:
+        src: supervisor.conf.j2
+        dest: /etc/supervisor/conf.d/crm.conf
+      become: true
+
+    - name: Reread Supervisor configurations
+      command: supervisorctl reread
+      become: true
+
+    - name: Update Supervisor
+      command: supervisorctl update
+      become: true
+
+    - name: Set proper ownership for static files
+      file:
+        path: /home/ubuntu/crm/staticfiles
+        owner: www-data
+        group: www-data
+        recurse: yes
+      become: true
+
+    - name: Adjust permissions for the SQLite database file
+      become: yes
+      file:
+        path: "/home/{{ ansible_user }}/crm/db.sqlite3"
+        mode: "0664"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+
+    - name: Set proper permissions for static files
+      file:
+        path: /home/ubuntu/crm/staticfiles
+        mode: 0755
+        recurse: yes
+      become: true

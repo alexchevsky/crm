@@ -1,0 +1,16 @@
+[Unit]
+Description=gunicorn daemon for crm
+After=network.target
+
+[Service]
+Restart=on-failure
+User=ubuntu
+WorkingDirectory=/home/ubuntu/crm
+EnvironmentFile=/home/ubuntu/crm/.env
+
+ExecStart=/home/ubuntu/crm/venv/bin/gunicorn \
+    --bind unix:/tmp/crm.socket \
+    crm.wsgi:application
+
+[Install]
+WantedBy=multi-user.target

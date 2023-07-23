@@ -1,0 +1,7 @@
+[program:crm]
+command=/home/ubuntu/crm/venv/bin/gunicorn crm.wsgi:application -b localhost:8000
+directory=/home/ubuntu/crm
+user=ubuntu
+autostart=true
+autorestart=true
+redirect_stderr=true
